@@ -1,0 +1,18 @@
+# Deliberately broken: a job with no steps, a step with neither run nor uses,
+# and a job missing runs-on.
+name: CI
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    steps:
+      - name: Run tests
+        run: cargo test --workspace
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ambiguous step

@@ -1,0 +1,83 @@
+# TPT CI Config Validator — custom rules example (Pro edition).
+#
+# Load with: tpt-cicfg-cli --config deploy.yaml --rules custom-rules.yaml
+#
+# Every rule needs an `id`, a `select` path, and a `condition`.
+# Optional: `description`, `severity` (error | warning | info, default
+# error), `value` (required by most conditions), and `when` (only run this
+# rule when a document-level condition holds — used here to target
+# Deployments only).
+#
+# Paths are dot-separated, with `[*]` for "every item in the list/map" and
+# `[0]` for a specific index:
+#   spec.template.spec.containers[*].image
+#
+# Conditions:
+#   exists / missing        the selected path must (not) be set
+#   equals / not_equals     scalar comparison (numbers compare numerically)
+#   matches / not_matches   regular expression on the value's text
+#   contains                substring (strings) or member (lists)
+#   gt / gte / lt / lte     numeric comparison
+#   one_of                  value is one of a list of options
+#   is_a                    value has this type:
+#                           string | number | bool | array | object | null
+
+name: Team deploy rules
+rules:
+  # Images must be pinned — no floating tags.
+  - id: no-latest-tag
+    description: Container images must pin an explicit tag or digest
+    severity: error
+    when:
+      select: kind
+      condition: equals
+      value: Deployment
+    select: spec.template.spec.containers[*].image
+    condition: not_matches
+    value: ":latest$"
+
+  # Internal services must carry team + environment labels.
+  - id: required-labels
+    description: Workloads must declare team and environment labels
+    severity: warning
+    when:
+      select: kind
+      condition: one_of
+      value: [Deployment, Service, StatefulSet]
+    select: metadata.labels.team
+    condition: exists
+
+  # Replicas, when set, must be at least 2 for prod namespaces.
+  - id: prod-min-replicas
+    description: Prod workloads need at least 2 replicas
+    severity: error
+    when:
+      select: metadata.namespace
+      condition: equals
+      value: prod
+    select: spec.replicas
+    condition: gte
+    value: 2
+
+  # No privileged containers.
+  - id: no-privileged
+    description: Containers must not run privileged
+    severity: error
+    when:
+      select: kind
+      condition: equals
+      value: Deployment
+    select: spec.template.spec.containers[*].securityContext.privileged
+    condition: not_equals
+    value: true
+
+  # Info-level note: every Deployment should carry a changelog annotation.
+  - id: changelog-annotation
+    description: Deployments should record the change ticket
+    severity: info
+    when:
+      select: kind
+      condition: equals
+      value: Deployment
+    select: metadata.annotations.changelog
+    condition: exists

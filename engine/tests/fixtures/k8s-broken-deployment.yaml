@@ -1,0 +1,17 @@
+# Deliberately broken: missing selector.matchLabels (required in apps/v1),
+# replicas is a string, second container has no image, metadata.name is not
+# DNS-1123 safe.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: Payments_API!!spec:
+  replicas: "three"
+  template:
+    metadata:
+      labels:
+        app: payments-api
+    spec:
+      containers:
+        - name: api
+          image: registry.internal/payments-api:latest
+        - name: sidecar

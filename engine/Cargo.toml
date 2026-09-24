@@ -11,3 +11,8 @@ default = []
 pro = []
 
 [dependencies]
+# Pure Rust, no-std-compatible core; wasm32-safe. Used for the `matches`
+# rule operators and the Terraform line-lint patterns. `unicode-perl` keeps
+# `\s`/`\w`/`\d` working in user-authored rule patterns without pulling the
+# full Unicode tables.
+regex = { version = "1", default-features = false, features = ["std", "perf", "unicode-perl", "unicode-case"] }
