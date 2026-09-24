@@ -1,0 +1,13 @@
+[package]
+name = "tpt-config-engine"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[features]
+default = []
+# Pro-only engine capabilities (batch validation, custom rule authoring).
+# The free engine compiles without it.
+pro = []
+
+[dependencies]
