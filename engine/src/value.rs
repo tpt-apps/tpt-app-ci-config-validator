@@ -141,22 +141,32 @@ impl Format {
 }
 
 /// Best-effort format detection from a file name + leading content.
-/// Content wins over extension: a `.txt` paste that starts with
-/// `apiVersion:` is still YAML.
+/// A known extension wins (a `.tf` file that starts with `#` comments is
+/// still Terraform); otherwise content is sniffed with comments and blank
+/// leading lines stripped.
 pub fn detect_format(name: &str, text: &str) -> Format {
     let ext = name.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
-    let trimmed = text.trim_start();
+    let body = strip_leading_comments(text);
 
-    let looks_xml = trimmed.starts_with("<?xml") || trimmed.starts_with('<');
-    let looks_json = trimmed.starts_with('{') || trimmed.starts_with('[');
-    let looks_hcl = ["terraform ", "resource \"", "provider \"", "variable \"", "module ", "output ", "data "]
-        .iter()
-        .any(|p| trimmed.starts_with(p)) || trimmed.starts_with("terraform{");
-    let looks_yaml = ["apiVersion:", "kind:", "version:", "name:", "on:", "jobs:", "-", " "]
-        .iter()
-        .any(|p| trimmed.starts_with(p))
-        || trimmed.contains(": ")
-            || trimmed.contains(":\n");
+    let looks_xml = body.starts_with("<?xml") || body.starts_with('<');
+    let looks_json = body.starts_with('{') || body.starts_with('[');
+
+    // Known extensions are authoritative — content sniffing is only for
+    // pastes and unknown extensions.
+    match ext.as_str() {
+        "yaml" | "yml" if !looks_xml && !looks_json => return Format::Yaml,
+        "json" if !looks_xml => return Format::Json,
+        "xml" => return Format::Xml,
+        "tf" | "tfvars" | "hcl" => return Format::Hcl,
+        _ => {}
+    }
+
+    let looks_hcl = body.lines().any(|line| {
+        let line = line.trim_start();
+        HCL_BLOCK_STARTS.iter().any(|p| line.starts_with(p))
+    });
+    let looks_yaml =
+        body.contains(": ") || body.contains(":\n") || body.trim_start().starts_with("- ");
 
     if looks_xml {
         Format::Xml
@@ -164,17 +174,32 @@ pub fn detect_format(name: &str, text: &str) -> Format {
         Format::Json
     } else if looks_hcl {
         Format::Hcl
-    } else if matches!(ext.as_str(), "yaml" | "yml") || looks_yaml {
+    } else if looks_yaml {
         Format::Yaml
-    } else if ext == "json" {
-        Format::Json
-    } else if ext == "xml" {
-        Format::Xml
-    } else if ext == "tf" || ext == "tfvars" || ext == "hcl" {
-        Format::Hcl
     } else {
         Format::Yaml
     }
+}
+
+const HCL_BLOCK_STARTS: &[&str] = &[
+    "terraform", "resource \"", "provider \"", "variable \"", "module ", "output ", "data \"", "locals",
+];
+
+/// Drop blank lines and whole-line comments (`#`, `//`) from the top so a
+/// commented file still sniffs by its first real content line.
+fn strip_leading_comments(text: &str) -> &str {
+    let mut body = text;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("//") {
+            body = &body[line.len()..];
+            body = body.strip_prefix('\n').unwrap_or(body);
+            body = body.strip_prefix("\r\n").unwrap_or(body);
+        } else {
+            break;
+        }
+    }
+    body.trim_start()
 }
 
 #[cfg(test)]
@@ -186,7 +211,15 @@ mod tests {
         assert_eq!(detect_format("paste.txt", "apiVersion: apps/v1\n"), Format::Yaml);
         assert_eq!(detect_format("paste.txt", "{\"a\": 1}"), Format::Json);
         assert_eq!(detect_format("paste.txt", "<?xml version=\"1.0\"?>"), Format::Xml);
-        assert_eq!(detect_format("x.tf", "terraform {\n}\n"), Format::Hcl);
         assert_eq!(detect_format("x.yaml", "kind: Deployment"), Format::Yaml);
+    }
+
+    #[test]
+    fn extension_wins_for_commented_files() {
+        // A `.tf` file that opens with `#` comments is still Terraform, and
+        // a commented YAML paste is still YAML.
+        assert_eq!(detect_format("main.tf", "# comment\n# more\nterraform {\n}\n"), Format::Hcl);
+        assert_eq!(detect_format("paste.txt", "# note:\nkind: Deployment\n"), Format::Yaml);
+        assert_eq!(detect_format("flow.tf", "// module \"vpc\" {\n}\n"), Format::Hcl);
     }
 }

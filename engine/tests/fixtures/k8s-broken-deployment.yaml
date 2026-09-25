@@ -1,10 +1,13 @@
-# Deliberately broken: missing selector.matchLabels (required in apps/v1),
-# replicas is a string, second container has no image, metadata.name is not
-# DNS-1123 safe.
+# Deliberately broken: missing spec.selector.matchLabels (required in
+# apps/v1), replicas is a string, the second container has no image, the
+# first image floats on :latest, and metadata.name is not DNS-1123 safe.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: Payments_API!!spec:
+  name: Payments_API!!
+  labels:
+    app: payments-api
+spec:
   replicas: "three"
   template:
     metadata:

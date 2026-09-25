@@ -91,13 +91,40 @@ impl Selector {
                 value: node.clone(),
             }),
             Some(Seg::Key(key)) => {
-                if let Some(child) = node.get(key) {
-                    let child_path = if path.is_empty() {
-                        key.clone()
-                    } else {
-                        format!("{path}.{key}")
-                    };
-                    self.walk(child, &child_path, &segs[1..], out);
+                match node {
+                    Value::Obj(_) => {
+                        if let Some(child) = node.get(key) {
+                            let child_path = if path.is_empty() {
+                                key.clone()
+                            } else {
+                                format!("{path}.{key}")
+                            };
+                            self.walk(child, &child_path, &segs[1..], out);
+                        }
+                    }
+                    // A key applied to an array maps over the items. This is
+                    // what makes XML rules uniform: `<dependency>` may parse
+                    // to an object (one occurrence) or an array (several),
+                    // and `dependency.artifactId` should read the same in
+                    // both shapes.
+                    Value::Arr(items) => {
+                        for (i, child) in items.iter().enumerate() {
+                            if let Some(grandchild) = child.get(key) {
+                                let child_path = if path.is_empty() {
+                                    key.clone()
+                                } else {
+                                    format!("{path}.{key}")
+                                };
+                                self.walk(
+                                    grandchild,
+                                    &format!("{child_path}[{i}]"),
+                                    &segs[1..],
+                                    out,
+                                );
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             Some(Seg::Index(i)) => {

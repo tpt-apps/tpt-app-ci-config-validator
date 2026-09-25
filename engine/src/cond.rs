@@ -27,6 +27,11 @@ pub enum Cond {
     OneOf(Vec<String>),
     /// Value has this type: string | number | bool | array | object | null.
     IsA(String),
+    /// Object (or any item of an array of objects) has this key. This is
+    /// how "every container must have an image" is expressed: select
+    /// `containers[*]`, then `has_key: image` — selecting
+    /// `containers[*].image` alone cannot see containers missing the key.
+    HasKey(String),
 }
 
 impl Cond {
@@ -55,6 +60,13 @@ impl Cond {
                 options.iter().any(|o| o == &text)
             }
             Cond::IsA(ty) => v.type_name() == ty.as_str(),
+            Cond::HasKey(key) => match v {
+                Value::Obj(map) => map.contains_key(key),
+                Value::Arr(items) => items
+                    .iter()
+                    .any(|item| matches!(item, Value::Obj(map) if map.contains_key(key))),
+                _ => false,
+            },
         };
         Some(verdict)
     }
@@ -75,6 +87,7 @@ impl Cond {
             Cond::Lte(n) => format!("must be <= {n}"),
             Cond::OneOf(opts) => format!("must be one of {}", quote_list(opts)),
             Cond::IsA(ty) => format!("must be a {ty}"),
+            Cond::HasKey(key) => format!("must have a `{key}` key"),
         }
     }
 
@@ -94,6 +107,7 @@ impl Cond {
             Cond::Lte(_) => "lte",
             Cond::OneOf(_) => "one_of",
             Cond::IsA(_) => "is_a",
+            Cond::HasKey(_) => "has_key",
         }
     }
 }

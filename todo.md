@@ -33,15 +33,26 @@
       dependency)
 
 ## Phase 1 — Core engine (wrap tpt-yaml + tpt-xml + tpt-data-parsers)
-- [ ] Survey the three base crates for existing YAML/XML/JSON parsing and
+- [x] Survey the three base crates for existing YAML/XML/JSON parsing and
       schema-validation support (Kubernetes/Terraform config shapes)
-- [ ] Adapter crate `engine/`: config file(s) + schema/rule set in →
+      (`tpt-yaml-core`: arena node model, multi-doc, anchors/aliases — used;
+      `tpt-data-parsers` has no general JSON/XML parser — its JSON crate is
+      streaming JSONL; `tpt-xml` does not exist — XML is a vendored minimal
+      parser in `engine/src/xml.rs`, JSON is serde_json)
+- [x] Adapter crate `engine/`: config file(s) + schema/rule set in →
       validation findings (path, rule violated, message) out as plain
       structs — no UI deps, host-unit-testable
-- [ ] Custom-rule format: define a simple rule DSL/schema format users can
-      author without learning a new language
-- [ ] Validation against real-world sample Kubernetes manifests and Terraform
+      (`tpt-config-engine`: normalized `Value` tree, path selectors,
+      conditions, `validate`/`validate_source`; 45 unit + 12 fixture tests)
+- [x] Custom-rule format: define a simple rule DSL/schema format users can
+      author without learning a new language (`examples/custom-rules.yaml`;
+      conditions: exists, missing, equals, not_equals, matches,
+      not_matches, contains, gt/gte/lt/lte, one_of, is_a, has_key)
+- [x] Validation against real-world sample Kubernetes manifests and Terraform
       configs (valid and deliberately broken)
+      (`engine/tests/fixtures/` — K8s/GHA/Terraform/pom.xml valid + broken;
+      GitHub Actions and Maven pom packs included; Terraform is a line lint,
+      not tree rules)
 
 ## Phase 2 — Free WASM UI
 - [ ] Single-file upload/paste + validation against built-in schema rules

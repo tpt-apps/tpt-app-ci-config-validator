@@ -187,8 +187,9 @@ fn cond_from_value(raw: &Value) -> Result<Cond, String> {
             }
         }
         "is_a" | "type" => Ok(Cond::IsA(value_text(need_value()?)?)),
+        "has_key" => Ok(Cond::HasKey(value_text(need_value()?)?)),
         other => Err(format!(
-            "unknown condition `{other}` (use: exists, missing, equals, not_equals, matches, not_matches, contains, gt, gte, lt, lte, one_of, is_a)"
+            "unknown condition `{other}` (use: exists, missing, equals, not_equals, matches, not_matches, contains, gt, gte, lt, lte, one_of, is_a, has_key)"
         )),
     }
 }

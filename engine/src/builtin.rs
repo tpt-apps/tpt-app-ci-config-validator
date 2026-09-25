@@ -130,16 +130,16 @@ pub fn kubernetes_rules() -> RuleSet {
             "k8s-container-name",
             "Every container needs a `name`",
             Severity::Error,
-            "spec.template.spec.containers[*].name",
-            Cond::Exists,
+            "spec.template.spec.containers[*]",
+            Cond::HasKey("name".into()),
             when_kind("Deployment"),
         ),
         gated(
             "k8s-container-image",
             "Every container needs an `image`",
             Severity::Error,
-            "spec.template.spec.containers[*].image",
-            Cond::Exists,
+            "spec.template.spec.containers[*]",
+            Cond::HasKey("image".into()),
             when_kind("Deployment"),
         ),
         gated(
@@ -148,6 +148,14 @@ pub fn kubernetes_rules() -> RuleSet {
             Severity::Warning,
             "spec.template.spec.containers[*].image",
             Cond::Matches(IMAGE_TAGGED.into()),
+            when_kind("Deployment"),
+        ),
+        gated(
+            "k8s-image-floating",
+            "Container images must not float on `:latest`",
+            Severity::Error,
+            "spec.template.spec.containers[*].image",
+            Cond::NotMatches(":latest$".into()),
             when_kind("Deployment"),
         ),
         gated(
@@ -206,6 +214,9 @@ pub fn kubernetes_rules() -> RuleSet {
 }
 
 /// GitHub Actions workflows (any doc with a top-level `jobs` object).
+/// Per-job shape (runs-on, steps, step actions) lives in `extra_checks`
+/// because the rule DSL's `when` is document-level and cannot gate per job
+/// (mixed run/call job workflows).
 pub fn github_actions_rules() -> RuleSet {
     let rules = vec![
         rule(
@@ -222,41 +233,64 @@ pub fn github_actions_rules() -> RuleSet {
             "jobs",
             Cond::IsA("object".into()),
         ),
-        gated(
-            "gha-runs-on",
-            "Every run job needs `runs-on`",
-            Severity::Error,
-            "jobs[*].runs-on",
-            Cond::Exists,
-            When {
-                select: Selector::parse("jobs[*].uses").expect("static selector must parse"),
-                cond: Cond::Missing,
-            },
-        ),
-        gated(
-            "gha-steps-required",
-            "Every run job needs a `steps` list",
-            Severity::Error,
-            "jobs[*].steps",
-            Cond::Exists,
-            When {
-                select: Selector::parse("jobs[*].uses").expect("static selector must parse"),
-                cond: Cond::Missing,
-            },
-        ),
-        gated(
-            "gha-steps-array",
-            "`steps` must be a list",
-            Severity::Error,
-            "jobs[*].steps",
-            Cond::IsA("array".into()),
-            When {
-                select: Selector::parse("jobs[*].uses").expect("static selector must parse"),
-                cond: Cond::Missing,
-            },
-        ),
     ];
     RuleSet::from_rules("GitHub Actions", rules)
+}
+
+/// Maven pom.xml (any XML whose root element is `project`). Child elements
+/// repeat-or-single uniformly: `dependencies.dependency.artifactId` reads
+/// through one dependency or many.
+pub fn pom_rules() -> RuleSet {
+    let rules = vec![
+        gated(
+            "pom-coordinates",
+            "Maven projects need groupId, artifactId, and version",
+            Severity::Error,
+            "artifactId",
+            Cond::Exists,
+            when_root_tag("project"),
+        ),
+        gated(
+            "pom-group-id",
+            "Maven projects need groupId, artifactId, and version",
+            Severity::Error,
+            "groupId",
+            Cond::Exists,
+            when_root_tag("project"),
+        ),
+        gated(
+            "pom-version",
+            "Maven projects need groupId, artifactId, and version",
+            Severity::Error,
+            "version",
+            Cond::Exists,
+            when_root_tag("project"),
+        ),
+        gated(
+            "pom-dependency-artifact",
+            "Every dependency needs an artifactId",
+            Severity::Error,
+            "dependencies.dependency",
+            Cond::HasKey("artifactId".into()),
+            when_root_tag("project"),
+        ),
+        gated(
+            "pom-dependency-version",
+            "Every dependency should pin a version",
+            Severity::Warning,
+            "dependencies.dependency",
+            Cond::HasKey("version".into()),
+            when_root_tag("project"),
+        ),
+    ];
+    RuleSet::from_rules("Maven pom.xml", rules)
+}
+
+fn when_root_tag(tag: &str) -> When {
+    When {
+        select: Selector::parse("@tag").expect("static selector must parse"),
+        cond: Cond::Equals(Value::from(tag)),
+    }
 }
 
 /// Cross-checks a path selector cannot express. These are hand-written and
@@ -266,15 +300,115 @@ pub fn extra_checks(doc: &Document) -> Vec<Finding> {
     match doc.format {
         Format::Yaml | Format::Json => {
             k8s_label_overlap(doc, &mut findings);
-            gha_step_actions(doc, &mut findings);
+            gha_job_shape(doc, &mut findings);
         }
-        _ => {}
+        Format::Xml | Format::Hcl => {}
     }
     findings
 }
 
-/// apps/v1 Deployments: selector.matchLabels must overlap (or be a subset
-/// relationship — selector labels ⊆ template labels).
+/// Which built-in DSL pack (if any) applies to this document. Detection is
+/// content-based so a `.yaml` paste still gets Kubernetes rules.
+pub fn builtin_pack(doc: &Document) -> Option<RuleSet> {
+    match doc.format {
+        Format::Yaml | Format::Json => {
+            if doc.root.get("apiVersion").is_some() && doc.root.get("kind").is_some() {
+                Some(kubernetes_rules())
+            } else if looks_like_workflow(doc) {
+                Some(github_actions_rules())
+            } else {
+                None
+            }
+        }
+        Format::Xml => {
+            let is_project = doc.root.get("@tag").and_then(Value::as_str) == Some("project");
+            is_project.then(pom_rules)
+        }
+        Format::Hcl => None,
+    }
+}
+
+/// GitHub Actions quirk: YAML 1.1 resolves the bare key `on` as boolean
+/// `true`, so the trigger block may appear under either key depending on
+/// the parser.
+fn looks_like_workflow(doc: &Document) -> bool {
+    let Some(Value::Obj(jobs)) = doc.root.get("jobs") else {
+        return false;
+    };
+    if jobs.is_empty() {
+        return false;
+    }
+    doc.root.get("on").is_some()
+        || doc.root.get("true").is_some()
+        || doc.root.get("name").is_some()
+}
+
+/// Per-job GitHub Actions shape: run jobs need `runs-on` and a `steps` list
+/// of steps that each carry `run` or `uses`; call jobs (`uses:` at the job
+/// level) have neither by design.
+fn gha_job_shape(doc: &Document, findings: &mut Vec<Finding>) {
+    let Some(Value::Obj(jobs)) = doc.root.get("jobs") else {
+        return;
+    };
+    for (job_id, job) in jobs {
+        let Value::Obj(job) = job else {
+            findings.push(Finding::new(
+                "gha-job-object",
+                Severity::Error,
+                format!("jobs.{job_id}"),
+                format!("job `{job_id}` must be a map"),
+            ));
+            continue;
+        };
+        // Reusable-workflow call jobs have no steps or runs-on by design.
+        if job.contains_key("uses") {
+            continue;
+        }
+        if !job.contains_key("runs-on") {
+            findings.push(Finding::new(
+                "gha-runs-on",
+                Severity::Error,
+                format!("jobs.{job_id}.runs-on"),
+                format!("job `{job_id}` needs `runs-on`"),
+            ));
+        }
+        match job.get("steps") {
+            None => findings.push(Finding::new(
+                "gha-steps-required",
+                Severity::Error,
+                format!("jobs.{job_id}.steps"),
+                format!("job `{job_id}` needs a `steps` list"),
+            )),
+            Some(Value::Arr(steps)) => {
+                for (i, step) in steps.iter().enumerate() {
+                    let Value::Obj(step) = step else {
+                        continue;
+                    };
+                    if !step.contains_key("run") && !step.contains_key("uses") {
+                        findings.push(Finding::new(
+                            "gha-step-action",
+                            Severity::Error,
+                            format!("jobs.{job_id}.steps[{i}]"),
+                            format!("step {i} of job `{job_id}` needs a `run` or `uses` key"),
+                        ));
+                    }
+                }
+            }
+            Some(other) => findings.push(Finding::new(
+                "gha-steps-array",
+                Severity::Error,
+                format!("jobs.{job_id}.steps"),
+                format!(
+                    "`steps` of job `{job_id}` must be a list, got {}",
+                    other.type_name()
+                ),
+            )),
+        }
+    }
+}
+
+/// apps/v1 Deployments: selector.matchLabels keys must appear in the pod
+/// template labels, or the Deployment matches no pods.
 fn k8s_label_overlap(doc: &Document, findings: &mut Vec<Finding>) {
     let is_deploy = doc.root.get("kind").and_then(Value::as_str) == Some("Deployment");
     if !is_deploy {
@@ -304,39 +438,6 @@ fn k8s_label_overlap(doc: &Document, findings: &mut Vec<Finding>) {
                     "selector label `{key}` is missing from `spec.template.metadata.labels` — no pods would match this Deployment"
                 ),
             ));
-        }
-    }
-}
-
-/// GitHub Actions: every step needs `run` or `uses` (OR-shaped; the DSL
-/// cannot say "one of these two keys" per step).
-fn gha_step_actions(doc: &Document, findings: &mut Vec<Finding>) {
-    let Some(Value::Obj(jobs)) = doc.root.get("jobs") else {
-        return;
-    };
-    for (job_id, job) in jobs {
-        let Value::Obj(job) = job else {
-            continue;
-        };
-        // Reusable-workflow call jobs have no steps by design.
-        if job.contains_key("uses") {
-            continue;
-        }
-        let Some(Value::Arr(steps)) = job.get("steps") else {
-            continue;
-        };
-        for (i, step) in steps.iter().enumerate() {
-            let Value::Obj(step) = step else {
-                continue;
-            };
-            if !step.contains_key("run") && !step.contains_key("uses") {
-                findings.push(Finding::new(
-                    "gha-step-action",
-                    Severity::Error,
-                    format!("jobs.{job_id}.steps[{i}]"),
-                    format!("step {i} of job `{job_id}` needs a `run` or `uses` key"),
-                ));
-            }
         }
     }
 }

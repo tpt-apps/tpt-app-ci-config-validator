@@ -11,6 +11,12 @@ default = []
 pro = []
 
 [dependencies]
+# Base crate: YAML 1.1/1.2 parsing (multi-document, anchors/aliases) into an
+# arena node model, zero deps, no_std-capable — wasm-safe.
+tpt-yaml-core = { path = "D:/Programming/1PRODUCTION/Open Source/tpt-yaml/crates/tpt-yaml-core" }
+# JSON parsing (there is no tpt-json general parser in tpt-data-parsers —
+# its JSON crate is streaming JSONL only).
+serde_json = "1"
 # Pure Rust, no-std-compatible core; wasm32-safe. Used for the `matches`
 # rule operators and the Terraform line-lint patterns. `unicode-perl` keeps
 # `\s`/`\w`/`\d` working in user-authored rule patterns without pulling the
