@@ -33,6 +33,22 @@ and calls `mount(container)` itself, so the two hosts never double-mount).
 The wasm-bindgen crate is pinned `=0.2.128` to the installed `wasm-bindgen`
 CLI version — bump both together.
 
+## CI CLI (Pro)
+
+```text
+tpt-cicfg-cli [OPTIONS] <PATH>...
+  --rules <FILE>    custom rules file (YAML/JSON) — see examples/custom-rules.yaml
+  --format <FMT>    text (default) | json
+Exit codes: 0 pass · 1 violations (errors or parse failures) · 2 usage/IO error
+```
+
+Files or whole directories (`.yaml .yml .json .xml .tf .hcl`, walked
+recursively, VCS/build dirs skipped). Warnings never fail the run.
+
+Rule-file note: quote any `select:` path containing `[` — a bare `*` in an
+unquoted YAML scalar reads as an alias indicator
+(`select: "spec.template.spec.containers[*].image"`).
+
 ## Hub contract
 
 `wasm-bindgen --target web` glue exposes `mount(container)`, called by the

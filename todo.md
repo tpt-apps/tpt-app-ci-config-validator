@@ -55,26 +55,50 @@
       not tree rules)
 
 ## Phase 2 — Free WASM UI
-- [ ] Single-file upload/paste + validation against built-in schema rules
-- [ ] Free-tier upsell copy pointing at batch/directory validation, custom
-      rules, CI CLI, team license
-- [ ] Browser-verified: mount, validate, findings render correctly
+- [x] Single-file upload/paste + validation against built-in schema rules
+      (appfront pattern from fea-lite: static shell mounted once, results
+      re-render via `tpt_appfront_dom::render`; hidden `<input type=file>` +
+      FileReader drives Upload; embedded broken-sample button for instant try)
+- [x] Free-tier upsell copy pointing at batch/directory validation, custom
+      rules, CI CLI, team license (dashed upsell card; `pro` build swaps it
+      for a custom-rules panel + multi-file batch input)
+- [x] Browser-verified: mount, validate, findings render correctly
+      (trunk serve + in-app browser: broken sample → 6 findings with
+      severity chips/paths/messages; valid deployment → "✓ All checks
+      passed". Two bugs found & fixed: file-input wiring ran before the
+      shell existed; results view had >1 root child which made
+      `into_only_child` panic — with panic=abort that traps wasm, so views
+      must always produce exactly one root)
 
 ## Phase 3 — Paid desktop edition (cargo feature `pro`)
-- [ ] `pro` gates: batch/directory validation, custom rule authoring, a CI
+- [x] `pro` gates: batch/directory validation, custom rule authoring, a CI
       CLI binary with proper exit codes (0 = pass, non-zero = violations),
       team license (not metered/per-seat)
-- [ ] Pro UI: directory picker, custom-rule editor, batch results table
-- [ ] CLI binary: separate `bin/` target reusing the same `engine/` crate,
+      (free wasm build compiles without `pro`; CLI ships only in Pro builds)
+- [x] Pro UI: directory picker, custom-rule editor, batch results table
+      (multi-file `<input multiple>` batch + custom-rules paste panel;
+      per-file result cards. Native directory picker left to the CLI —
+      the webview can't host one portably)
+- [x] CLI binary: separate `bin/` target reusing the same `engine/` crate,
       with `--config`/`--rules`/`--format` flags and CI-friendly output
-- [ ] Desktop shell via `tpt-appfront-webview` for the UI; CLI built and
+      (`cli/` → `tpt-cicfg-cli`; positional paths + `--rules` + `--format
+      text|json`; exit 0 pass / 1 violations / 2 usage-or-IO; recursive
+      directory batching; smoke-tested against all fixtures)
+- [x] Desktop shell via `tpt-appfront-webview` for the UI; CLI built and
       smoke-tested standalone (this is the one app where the CLI matters as
       much as the GUI)
+      (`desktop/` → `tpt-ci-config-validator-pro.exe`, embedded dist via
+      include_dir, app:// protocol, open_external ACL — mirrors fea-lite)
 - [ ] Gumroad product from apps.md listing copy ($29, team license), exe/CLI
       upload, URL into registry — manual step, listing copy at apps.md §T2-10
+      (copy ready in GUMROAD.md; upload is manual)
 
 ## Phase 4 — Ship & measure
-- [ ] Registry entry (`developer` category, `wasm: { entry: '/apps/ci-config-validator/ci-config-validator.js' }`)
+- [x] Registry entry (`developer` category, `wasm: { entry: '/apps/ci-config-validator/ci-config-validator.js' }`)
       per the "Adding a finished app to the hub" runbook at the bottom of apps.md
+      (added as `coming-soon` with proFeatures; build.ps1 writes the free
+      bundle to `public/apps/ci-config-validator/` — 932 KB raw / 334 KB gz)
 - [ ] Verify hub card/detail/sitemap/runner in dev, then prod after deploy
-- [ ] WASM size budget check on the shipped build
+      (needs the web repo dev server + deploy — manual step)
+- [x] WASM size budget check on the shipped build (334 KB gz against the
+      ~2 MB budget — regex + YAML/JSON/XML engine included)

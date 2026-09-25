@@ -9,8 +9,9 @@
 # Deployments only).
 #
 # Paths are dot-separated, with `[*]` for "every item in the list/map" and
-# `[0]` for a specific index:
-#   spec.template.spec.containers[*].image
+# `[0]` for a specific index. Quote any path containing `[` — a bare `*`
+# reads as a YAML alias:
+#   "spec.template.spec.containers[*].image"
 #
 # Conditions:
 #   exists / missing        the selected path must (not) be set
@@ -32,7 +33,7 @@ rules:
       select: kind
       condition: equals
       value: Deployment
-    select: spec.template.spec.containers[*].image
+    select: "spec.template.spec.containers[*].image"
     condition: not_matches
     value: ":latest$"
 
@@ -67,7 +68,7 @@ rules:
       select: kind
       condition: equals
       value: Deployment
-    select: spec.template.spec.containers[*].securityContext.privileged
+    select: "spec.template.spec.containers[*].securityContext.privileged"
     condition: not_equals
     value: true
 

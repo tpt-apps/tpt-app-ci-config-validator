@@ -1,0 +1,22 @@
+[package]
+name = "tpt-cicfg-cli"
+version = "0.1.0"
+edition = "2021"
+description = "TPT CI Config Validator Pro - CI-friendly config validation CLI with exit codes."
+publish = false
+
+[[bin]]
+name = "tpt-cicfg-cli"
+path = "src/main.rs"
+
+[dependencies]
+tpt-config-engine = { path = "../engine" }
+# JSON output format.
+serde_json = "1"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
