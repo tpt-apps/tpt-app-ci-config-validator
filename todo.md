@@ -98,7 +98,12 @@
       per the "Adding a finished app to the hub" runbook at the bottom of apps.md
       (added as `coming-soon` with proFeatures; build.ps1 writes the free
       bundle to `public/apps/ci-config-validator/` — 932 KB raw / 334 KB gz)
-- [ ] Verify hub card/detail/sitemap/runner in dev, then prod after deploy
-      (needs the web repo dev server + deploy — manual step)
+- [x] Verify hub card/detail/sitemap/runner in dev, then prod after deploy
+      (dev verified: `/tools/ci-config-validator` renders the card + demo,
+      the hub `WasmAppRunner` mounts the app and validation runs inside it
+      (broken sample → 6 findings), `/sitemap.xml` lists the page. Prod
+      check remains for the next deploy. Note: the `/tools` listing route
+      404s in this repo's dev server for ALL apps incl. fea-lite —
+      pre-existing, not ours)
 - [x] WASM size budget check on the shipped build (334 KB gz against the
       ~2 MB budget — regex + YAML/JSON/XML engine included)
