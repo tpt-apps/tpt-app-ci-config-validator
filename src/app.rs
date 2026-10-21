@@ -267,6 +267,9 @@ fn pro_block(c: &mut ContainerBuilder<Msg>) {
     }
 }
 
+#[cfg(all(target_arch = "wasm32", not(feature = "pro")))]
+const PRO_URL: &str = "https://tpt12.gumroad.com/l/tpt-ci-config-validator";
+
 #[cfg(target_arch = "wasm32")]
 fn upsell(c: &mut ContainerBuilder<Msg>) {
     #[cfg(not(feature = "pro"))]
@@ -284,6 +287,10 @@ fn upsell(c: &mut ContainerBuilder<Msg>) {
                 foot.text("TPT CI Config Validator Pro — $29 one-time, offline, yours to keep.");
             })
             .class("cicfg-upsell-foot");
+            u.link(PRO_URL, "Get TPT CI Config Validator Pro — $29 →")
+                .class("cicfg-buy")
+                .attr("target", "_blank")
+                .attr("rel", "noopener");
         })
         .class("cicfg-upsell");
     }
@@ -714,6 +721,9 @@ body:has(.cicfg-app) { background: #eef0f3; margin: 0; padding: 18px 10px; }
 .cicfg-upsell-list { margin: 0; padding-left: 20px; }
 .cicfg-upsell-list > * { margin: 3px 0; }
 .cicfg-upsell-foot { margin-top: 10px; color: var(--cicfg-dim); font-size: 13px; }
+.cicfg-buy { display: inline-block; margin-top: 12px; padding: 9px 16px; border-radius: 7px;
+  background: #14507a; color: #fff; font-weight: 600; text-decoration: none; }
+.cicfg-buy:hover { background: #0f405f; }
 .cicfg-pro-heading { margin: 0 0 6px; font-size: 15px; }
 .cicfg-footer { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--cicfg-line);
   color: var(--cicfg-dim); font-size: 13px; text-align: center; }
