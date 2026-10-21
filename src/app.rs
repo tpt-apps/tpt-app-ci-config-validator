@@ -73,7 +73,8 @@ pub fn mount_app(container: &web_sys::Element) -> Result<(), JsValue> {
                 let text = read_textarea(&container).unwrap_or_default();
                 let name = read_filename(&container).unwrap_or_else(|| "<paste>".to_string());
                 let name = if name.is_empty() { "<paste>".to_string() } else { name };
-                let parsed = tpt_config_engine::validate_source(&name, &text, None);
+                let (custom, mut parsed) = custom_rules(&container);
+                parsed.extend(tpt_config_engine::validate_source(&name, &text, custom.as_ref()));
                 reports.set(parsed);
                 has_run.set(true);
             }
@@ -81,13 +82,14 @@ pub fn mount_app(container: &web_sys::Element) -> Result<(), JsValue> {
             Msg::FileLoaded { name, text } => {
                 write_textarea(&container, &text);
                 write_filename(&container, &name);
-                let parsed = tpt_config_engine::validate_source(&name, &text, None);
+                let (custom, mut parsed) = custom_rules(&container);
+                parsed.extend(tpt_config_engine::validate_source(&name, &text, custom.as_ref()));
                 reports.set(parsed);
                 has_run.set(true);
             }
             #[cfg(feature = "pro")]
             Msg::BatchLoaded(files) => {
-                let mut parsed = Vec::new();
+                let (custom, mut parsed) = custom_rules(&container);
                 if let Some((_, last_text)) = files.last() {
                     write_textarea(&container, last_text);
                 }
@@ -95,7 +97,7 @@ pub fn mount_app(container: &web_sys::Element) -> Result<(), JsValue> {
                     write_filename(&container, last_name);
                 }
                 for (name, text) in &files {
-                    parsed.extend(tpt_config_engine::validate_source(name, text, None));
+                    parsed.extend(tpt_config_engine::validate_source(name, text, custom.as_ref()));
                 }
                 reports.set(parsed);
                 has_run.set(true);
@@ -103,7 +105,8 @@ pub fn mount_app(container: &web_sys::Element) -> Result<(), JsValue> {
             Msg::Sample(name, text) => {
                 write_textarea(&container, text);
                 write_filename(&container, name);
-                let parsed = tpt_config_engine::validate_source(name, text, None);
+                let (custom, mut parsed) = custom_rules(&container);
+                parsed.extend(tpt_config_engine::validate_source(name, text, custom.as_ref()));
                 reports.set(parsed);
                 has_run.set(true);
             }
@@ -138,6 +141,51 @@ pub fn mount_app(container: &web_sys::Element) -> Result<(), JsValue> {
     // `multiple` for batch).
     wire_file_input(container, &dispatch)?;
 
+    // 4) Pro footer: the paid desktop build has no hub chrome around it, so
+    // point customers back at the TPT tools page.
+    #[cfg(feature = "pro")]
+    mount_footer(&document, container)?;
+
+    Ok(())
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "pro"))]
+const TOOLS_URL: &str = "https://tptsolutions.co.nz/tools";
+
+/// Footer link to the tools page. In the desktop shell a plain navigation
+/// would replace the app, so the click is routed through the webview's
+/// `open_external` action (OS default browser); in a normal browser the
+/// anchor's own `href` + `target=_blank` does the job.
+#[cfg(all(target_arch = "wasm32", feature = "pro"))]
+fn mount_footer(document: &web_sys::Document, container: &web_sys::Element) -> Result<(), JsValue> {
+    let footer = document.create_element("div")?;
+    footer.set_class_name("cicfg-footer");
+    footer.append_child(&document.create_text_node("More developer tools from TPT Solutions · "))?;
+
+    let link = document.create_element("a")?;
+    link.set_attribute("href", TOOLS_URL)?;
+    link.set_attribute("target", "_blank")?;
+    link.set_attribute("rel", "noopener noreferrer")?;
+    link.set_text_content(Some("tptsolutions.co.nz/tools"));
+    footer.append_child(&link)?;
+    container.append_child(&footer)?;
+
+    let on_click: Box<dyn FnMut(web_sys::Event)> = Box::new(|e| {
+        let Some(window) = web_sys::window() else { return };
+        let Ok(bridge) = js_sys::Reflect::get(&window, &JsValue::from_str("__appfront")) else { return };
+        if bridge.is_undefined() || bridge.is_null() {
+            return;
+        }
+        let Ok(post) = js_sys::Reflect::get(&bridge, &JsValue::from_str("post")) else { return };
+        let Ok(post) = post.dyn_into::<js_sys::Function>() else { return };
+        let params = js_sys::Object::new();
+        let _ = js_sys::Reflect::set(&params, &JsValue::from_str("url"), &JsValue::from_str(TOOLS_URL));
+        e.prevent_default();
+        let _ = post.call2(&bridge, &JsValue::from_str("open_external"), &params);
+    });
+    let on_click = wasm_bindgen::closure::Closure::wrap(on_click);
+    link.add_event_listener_with_callback("click", on_click.as_ref().unchecked_ref())?;
+    on_click.forget();
     Ok(())
 }
 
@@ -149,6 +197,9 @@ fn shell_tree() -> UITree<Msg> {
         c.container(|h| {
             h.heading(1, "TPT CI Config Validator").class("cicfg-title");
             h.container(|p| {
+                #[cfg(feature = "pro")]
+                p.text("Validate Kubernetes, Terraform, and CI config files against built-in schema rules and your own custom rules. Paste a file below, or upload one or many for a batch run.");
+                #[cfg(not(feature = "pro"))]
                 p.text("Validate Kubernetes, Terraform, and CI config files against built-in schema rules — free, in your browser. Paste a file below or upload one.");
             })
             .class("cicfg-sub");
@@ -380,6 +431,49 @@ fn read_textarea(container: &web_sys::Element) -> Option<String> {
         .ok()?
         .and_then(|el| el.dyn_into::<web_sys::HtmlTextAreaElement>().ok())
         .map(|ta| ta.value())
+}
+
+/// The Pro custom-rules panel, parsed. A broken rules file comes back as a
+/// leading report (shown like any parse failure) rather than being silently
+/// ignored; rules skipped individually are reported the same way.
+#[cfg(all(target_arch = "wasm32", feature = "pro"))]
+fn custom_rules(container: &web_sys::Element) -> (Option<tpt_config_engine::RuleSet>, Reports) {
+    use tpt_config_engine::{parse::{parse_source, Parsed}, rules::rule_set_from_value, Format};
+
+    let text = container
+        .query_selector(".cicfg-rules")
+        .ok()
+        .flatten()
+        .and_then(|el| el.dyn_into::<web_sys::HtmlTextAreaElement>().ok())
+        .map(|ta| ta.value())
+        .unwrap_or_default();
+    if text.trim().is_empty() {
+        return (None, Vec::new());
+    }
+
+    let failure = |message: String| Report {
+        document: "<custom rules>".to_string(),
+        format: Format::Yaml,
+        parse_error: Some(message),
+        findings: Vec::new(),
+    };
+    let doc = match parse_source("custom-rules.yaml", &text) {
+        Parsed::Docs(mut docs) if !docs.is_empty() => docs.remove(0),
+        Parsed::Docs(_) => return (None, Vec::new()),
+        Parsed::Failed(e) => return (None, vec![failure(format!("rules failed to parse: {e}"))]),
+    };
+    match rule_set_from_value(&doc.root) {
+        Ok((set, errors)) => {
+            let notes = errors.iter().map(|e| failure(format!("skipped rule: {e}"))).collect();
+            (Some(set), notes)
+        }
+        Err(e) => (None, vec![failure(format!("bad rules: {e}"))]),
+    }
+}
+
+#[cfg(all(target_arch = "wasm32", not(feature = "pro")))]
+fn custom_rules(_container: &web_sys::Element) -> (Option<tpt_config_engine::RuleSet>, Reports) {
+    (None, Vec::new())
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -621,5 +715,8 @@ body:has(.cicfg-app) { background: #eef0f3; margin: 0; padding: 18px 10px; }
 .cicfg-upsell-list > * { margin: 3px 0; }
 .cicfg-upsell-foot { margin-top: 10px; color: var(--cicfg-dim); font-size: 13px; }
 .cicfg-pro-heading { margin: 0 0 6px; font-size: 15px; }
+.cicfg-footer { margin-top: 4px; padding-top: 12px; border-top: 1px solid var(--cicfg-line);
+  color: var(--cicfg-dim); font-size: 13px; text-align: center; }
+.cicfg-footer a { color: #14507a; }
 .cicfg-hint { color: var(--cicfg-dim); font-size: 13px; margin-bottom: 8px; }
 "#;

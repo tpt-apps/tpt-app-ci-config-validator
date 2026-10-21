@@ -58,6 +58,42 @@ if ($Pro) {
     cargo build --release -p tpt-cicfg-cli
     if ($LASTEXITCODE -ne 0) { throw "cli build failed" }
     Write-Host "   exe: target\release\tpt-cicfg-cli.exe" -ForegroundColor Cyan
+
+    # Package the Gumroad upload: release\tpt-ci-config-validator-pro-v<version>-win64.zip
+    Write-Host "-- packaging the Gumroad zip" -ForegroundColor Cyan
+    $Version = (Select-String -Path (Join-Path $PSScriptRoot "desktop\Cargo.toml") -Pattern '^version\s*=\s*"(.+)"').Matches[0].Groups[1].Value
+    $Stage = Join-Path $PSScriptRoot "release\stage"
+    $ZipPath = Join-Path $PSScriptRoot "release\tpt-ci-config-validator-pro-v$Version-win64.zip"
+    if (Test-Path $Stage) { Remove-Item $Stage -Recurse -Force }
+    New-Item -ItemType Directory -Force -Path $Stage | Out-Null
+    Copy-Item (Join-Path $PSScriptRoot "target\release\tpt-ci-config-validator-pro.exe") $Stage
+    Copy-Item (Join-Path $PSScriptRoot "target\release\tpt-cicfg-cli.exe") $Stage
+    Copy-Item (Join-Path $PSScriptRoot "examples\custom-rules.yaml") $Stage
+    @"
+TPT CI Config Validator Pro v$Version
+=====================================
+
+tpt-ci-config-validator-pro.exe   Desktop app: double-click to run. Batch
+                                  validation and custom rules. Needs the
+                                  WebView2 runtime (preinstalled on
+                                  Windows 10 20H2+ and Windows 11).
+tpt-cicfg-cli.exe                 CI command-line validator.
+custom-rules.yaml                 Example custom rules file (documents the format).
+
+CLI usage:
+  tpt-cicfg-cli [OPTIONS] <PATH>...
+    --rules <FILE>    custom rules file (YAML/JSON)
+    --format <FMT>    text (default) | json
+  Exit codes: 0 pass, 1 violations, 2 usage/IO error
+
+  Example:  tpt-cicfg-cli deploy/ --rules custom-rules.yaml
+
+More developer tools: https://tptsolutions.co.nz/tools
+"@ | Set-Content -Path (Join-Path $Stage "README.txt") -Encoding UTF8
+    if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+    Compress-Archive -Path (Join-Path $Stage "*") -DestinationPath $ZipPath
+    Remove-Item $Stage -Recurse -Force
+    Write-Host "   zip: $ZipPath" -ForegroundColor Green
     Write-Host "-- done" -ForegroundColor Green
     Write-Host "   (public/apps/ci-config-validator/ was not touched — run ./build.ps1 with no flags to refresh the free demo)"
     exit 0
@@ -124,7 +160,7 @@ if (-not $WebRepo) {
     category: 'developer',
     status: 'coming-soon',
     wasm: { entry: '/apps/$Slug/$OutName.js' },
-    // gumroadUrl: 'https://gum.co/...',  // add once the Pro exe is listed
+    gumroadUrl: 'https://tpt12.gumroad.com/l/tpt-ci-config-validator',
   },
 "@
 }

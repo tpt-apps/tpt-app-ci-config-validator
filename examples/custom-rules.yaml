@@ -1,6 +1,6 @@
 # TPT CI Config Validator — custom rules example (Pro edition).
 #
-# Load with: tpt-cicfg-cli --config deploy.yaml --rules custom-rules.yaml
+# Load with: tpt-cicfg-cli deploy.yaml --rules custom-rules.yaml
 #
 # Every rule needs an `id`, a `select` path, and a `condition`.
 # Optional: `description`, `severity` (error | warning | info, default

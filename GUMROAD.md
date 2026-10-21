@@ -14,7 +14,8 @@ that changes, update here too (and vice versa).
 4. Paste the short description, bullets, and full description (below) into
    their respective fields.
 5. Set category/tags (below) and add a cover image (see note below).
-6. Publish, then copy the resulting product URL (`https://gum.co/...`).
+6. Publish. The product URL is `https://tpt12.gumroad.com/l/tpt-ci-config-validator`
+   (set the custom permalink to `tpt-ci-config-validator`).
 7. Paste that URL into the `ci-config-validator` entry's `gumroadUrl` field
    in `tpt-electrician-nz-2\src\lib\tpt-apps-registry.ts`, and set
    `price: '$29'` on the same entry.
@@ -24,8 +25,9 @@ that changes, update here too (and vice versa).
 
 ## File to upload
 
-Not built yet. Once packaged, this will be the Pro exe/zip produced by the
-app's `build.ps1 -Pro` (or equivalent) — see `todo.md`.
+`release	pt-ci-config-validator-pro-v0.1.0-win64.zip` — produced by
+`./build.ps1 -Pro` (desktop exe + CI CLI + example rules + README.txt). The
+`release/` folder is gitignored; rebuild it before each upload.
 
 ## Product name
 
@@ -88,12 +90,13 @@ on both — nothing extra to download.
 
 ## Cover image / thumbnail
 
-Not created yet. A screenshot of a batch validation run flagging a real
-config error is the most convincing cover once built. No stock/AI art.
+Real app screenshots live in `screenshots/` (`00-cover-1280x720.png` is
+cover-sized; `03-batch-validation.png` is the strongest listing shot).
+No stock/AI art.
 
 ## After publishing
 
-1. Copy the resulting product URL (`https://gum.co/...`).
+1. The product URL is `https://tpt12.gumroad.com/l/tpt-ci-config-validator`.
 2. Paste it into the `gumroadUrl` field of the `ci-config-validator` entry
    in `tpt-electrician-nz-2\src\lib\tpt-apps-registry.ts`, and set
    `price: '$29'`.
